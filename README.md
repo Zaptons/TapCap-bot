@@ -24,7 +24,7 @@ Hopefully this acts as a guidline for how you can eventually combat this
     *   [Firefox](https://addons.mozilla.org/en-US/firefox/addon/tampermonkey/)
     *   [Edge](https://microsoftedge.microsoft.com/addons/detail/tampermonkey/iikmkjmpaadaobahmlepeloendndfphd)
 2.  Click the Tampermonkey icon and select **"Create a new script..."**.
-3.  Delete any default code and paste the content of `tapcap_bot.user.js` into the editor.
+3.  Delete any default code and paste the content of `fapcap_bot.user.js` into the editor.
 4.  File > **Save**.
 5.  Navigate to [play.tapcapgame.com](https://play.tapcapgame.com/) and refresh the page.
 

@@ -1,13 +1,26 @@
+// ==UserScript==
+// @name         FapCap bot by daddy
+// @namespace    http://tampermonkey.net/
+// @version      1
+// @description  The ultimate fap buddy
+// @author       Daddy
+// @match        *://*.tapcapgame.com/*
+// @match        *://tapcapgame.com/*
+// @match        https://play.tapcapgame.com/*
+// @grant        none
+// @run-at       document-start
+// ==/UserScript==
+
 (function() {
     'use strict';
 
     let hookedPlayer = null;
     let hookedScene = null;
     let debugGraphics = null;
-    
-    let currentTargetId = null; 
-    let reactionLock = 0;       
-    let cruisingY = -1;         
+
+    let currentTargetId = null;
+    let reactionLock = 0;
+    let cruisingY = -1;
     let lastRestartAttempt = 0;
 
     const originalBind = Function.prototype.bind;
@@ -35,10 +48,10 @@
 
     const CONFIG = {
         enabled: false,
-        humanity: 0.1, 
+        humanity: 0.1,
         jumpCooldownBase: 60,
         debug: true,
-        targetOffset: 20, 
+        targetOffset: 20,
         guiVisible: true,
         targetScore: 0
     };
@@ -82,7 +95,7 @@
             pointer-events: auto;
             display: block;
         `;
-        
+
         const title = document.createElement('div');
         title.innerHTML = '🌭 FapCap Bot v1';
         title.style.cssText = 'font-weight: bold; margin-bottom: 12px; text-align: center; color: #00d2ff; font-size: 16px; border-bottom: 1px solid #4a90e2; padding-bottom: 5px;';
@@ -90,11 +103,11 @@
 
         const toggleRow = document.createElement('div');
         toggleRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
-        
+
         const label = document.createElement('span');
         label.innerText = 'Auto Play';
         label.style.fontWeight = 'bold';
-        
+
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.style.cssText = 'cursor: pointer; width: 20px; height: 20px;';
@@ -110,11 +123,11 @@
 
         const debugRow = document.createElement('div');
         debugRow.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;';
-        
+
         const debugLabel = document.createElement('span');
         debugLabel.innerText = 'Show Debug Lines';
         debugLabel.style.fontSize = '12px';
-        
+
         const debugCheckbox = document.createElement('input');
         debugCheckbox.type = 'checkbox';
         debugCheckbox.style.cssText = 'cursor: pointer; width: 16px; height: 16px;';
@@ -130,12 +143,12 @@
 
         const sliderContainer = document.createElement('div');
         sliderContainer.style.marginBottom = '10px';
-        
+
         const sliderLabel = document.createElement('div');
         sliderLabel.id = 'humanity-label';
         sliderLabel.innerText = 'Humanization: ' + (CONFIG.humanity * 100).toFixed(0) + '%';
         sliderLabel.style.cssText = 'font-size: 12px; margin-bottom: 5px; color: #ccc;';
-        
+
         const slider = document.createElement('input');
         slider.type = 'range';
         slider.min = '0';
@@ -154,13 +167,13 @@
 
         const scoreRow = document.createElement('div');
         scoreRow.style.cssText = 'display: flex; flex-direction: column; margin-bottom: 10px;';
-        
+
         const scoreLabel = document.createElement('span');
         scoreLabel.innerText = 'Stop at Score (0 = Infinite)';
         scoreLabel.style.fontSize = '12px';
         scoreLabel.style.marginBottom = '5px';
         scoreLabel.style.color = '#ccc';
-        
+
         const scoreInput = document.createElement('input');
         scoreInput.type = 'number';
         scoreInput.min = '0';
@@ -186,7 +199,7 @@
     function updateStatus(text, color) {
         const statusDiv = document.getElementById('bot-status');
         if (!statusDiv) return;
-        
+
         if (text) {
             statusDiv.innerText = text;
             if(color) statusDiv.style.color = color;
@@ -228,7 +241,7 @@
         }
 
         debugGraphics.clear();
-        
+
         debugGraphics.lineStyle(2, 0xff0000, 0.8);
         obstacles.forEach(o => {
              if (o.getBounds) {
@@ -268,11 +281,11 @@
         const playerLeft = player.x - (pWidth / 2);
         const viewRight = camera.scrollX + camera.width;
 
-        const retentionBuffer = 10; 
+        const retentionBuffer = 10;
 
         const relevant = obstacles.filter(o => {
             if (!o.active || !o.visible) return false;
-            
+
             let rightEdge, leftEdge;
             if (o.getBounds) {
                 const b = o.getBounds();
@@ -280,18 +293,18 @@
                 leftEdge = b.left;
             } else {
                 const oWidth = o.width * o.scaleX;
-                rightEdge = o.x + (oWidth / 2); 
+                rightEdge = o.x + (oWidth / 2);
                 leftEdge = o.x - (oWidth / 2);
             }
-            
+
             const isBehind = rightEdge <= (playerLeft - retentionBuffer);
             if (isBehind) return false;
 
-            if (leftEdge > (viewRight + 1200)) return false; 
+            if (leftEdge > (viewRight + 1200)) return false;
 
             return true;
         });
-        
+
         if (relevant.length === 0) {
             return null;
         }
@@ -331,13 +344,13 @@
                 };
             }
         }
-        
+
         const nextNextX = relevant.find(o => o.x > nextX + 150)?.x;
         let nextGapCenter = undefined;
-        
+
         if (nextNextX) {
             const nextColumn = relevant.filter(o => Math.abs(o.x - nextNextX) < 40);
-            
+
             let nextColLeft = 999999;
             nextColumn.forEach(o => {
                 const x = o.getBounds ? o.getBounds().left : o.x;
@@ -352,10 +365,10 @@
                 });
                 nextBounds.push({ top: -9999, bottom: 0 }, { top: sceneHeight, bottom: 9999 });
                 nextBounds.sort((a, b) => a.top - b.top);
-                
+
                 let nextMaxGap = 0;
                 let nextGapCenter = sceneHeight / 2;
-                
+
                 for (let i = 0; i < nextBounds.length - 1; i++) {
                     const gap = nextBounds[i+1].top - nextBounds[i].bottom;
                     if (gap > nextMaxGap) {
@@ -363,29 +376,29 @@
                         nextGapCenter = nextBounds[i].bottom + (gap / 2);
                     }
                 }
-                
+
                 const diff = nextGapCenter - gapInfo.center;
-                
+
                 let biasFactor = 0;
-                
+
                 const urgency = Math.min(1, currentScore / 150);
 
-                if (diff > 0) { 
-                    biasFactor = 0.8 + (0.2 * urgency); 
-                } else { 
+                if (diff > 0) {
+                    biasFactor = 0.8 + (0.2 * urgency);
+                } else {
                     biasFactor = 0.4 + (0.2 * urgency);
                 }
-                
+
                 if (biasFactor > 1.0) biasFactor = 1.0;
 
                 gapInfo.center += diff * biasFactor;
 
-                let safePadding = 45 - (25 * urgency); 
+                let safePadding = 45 - (25 * urgency);
                 if (safePadding < 20) safePadding = 20;
-                
+
                 const safeCeiling = gapInfo.top + safePadding;
                 const safeFloor = gapInfo.bottom - safePadding;
-                
+
                 if (safeCeiling > safeFloor) {
                      gapInfo.center = (gapInfo.top + gapInfo.bottom) / 2;
                 } else {
@@ -395,9 +408,9 @@
             }
         }
 
-        return { 
-            ...gapInfo, 
-            relevant: column, 
+        return {
+            ...gapInfo,
+            relevant: column,
             id: gapId,
             nextCenter: nextGapCenter
         };
@@ -405,7 +418,7 @@
 
     function tryRestart(scene) {
         const time = Date.now();
-        if (time - lastRestartAttempt < 1000) return; 
+        if (time - lastRestartAttempt < 1000) return;
         lastRestartAttempt = time;
 
         const replayBtn = document.querySelector("#replayBtn");
@@ -429,7 +442,7 @@
 
     function update() {
         updateStatus();
-        
+
         if (CONFIG.enabled && hookedScene && hookedScene.sys.settings.key === "Home") {
              if (hookedScene.playBtn && hookedScene.playBtn.active) {
                  tryRestart(hookedScene);
@@ -459,7 +472,7 @@
 
         if (currentScore > 150) {
             currentHumanity = 0;
-            currentCooldown = 0; 
+            currentCooldown = 0;
         } else if (currentScore > 100) {
             currentHumanity *= 0.1;
             currentCooldown = 12;
@@ -514,7 +527,7 @@
         const obstacles = scene.obstacleMgr.obstacles;
         const sceneHeight = scene.scale.height;
         const camera = scene.cameras.main;
-        
+
         const gap = getGap(player, obstacles, sceneHeight, camera, currentScore);
 
         let targetY;
@@ -557,7 +570,7 @@
 
         const sway = Math.sin(time / 400) * (20 * currentHumanity);
         const noise = (Math.random() - 0.5) * (30 * currentHumanity);
-        
+
         targetY = perfectTargetY + CONFIG.targetOffset + sway + noise;
 
         const playerY = player.y;
@@ -567,7 +580,7 @@
 
         if (time - lastJumpTime > cooldown) {
             const distToTop = playerY - gapTop;
-            
+
             let shouldJump = false;
 
             if (dy > 0 && velocityY > -5) {
@@ -613,7 +626,7 @@
                 clearInterval(interval);
             }
         }, 1000);
-        
+
         setInterval(update, 16);
     });
 

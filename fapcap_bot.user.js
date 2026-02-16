@@ -14,6 +14,8 @@
 (function() {
     'use strict';
 
+    console.log('[TapCap Bot] Script Started');
+
     let hookedPlayer = null;
     let hookedScene = null;
     let debugGraphics = null;
@@ -22,6 +24,10 @@
     let reactionLock = 0;       
     let cruisingY = -1;         
     let lastRestartAttempt = 0;
+    
+    // Score Cache
+    let cachedScoreObject = null;
+    let lastScoreScan = 0;
 
     const originalBind = Function.prototype.bind;
     const originalToString = Function.prototype.bind.toString;
@@ -31,12 +37,14 @@
         if (context && typeof context === 'object') {
             if (context.scene && context.playerType && context.body && typeof context.jump === 'function') {
                 if (hookedPlayer !== context) {
+                    console.log('[TapCap Bot] Hooked Player Instance!', context);
                     hookedPlayer = context;
                     hookedScene = context.scene;
                 }
             }
             if (context.sys && context.sys.settings && context.sys.settings.key === "Home") {
                  hookedScene = context;
+                 console.log('[TapCap Bot] Hooked Home Scene!', context);
             }
         }
         return originalBind.apply(this, args);
@@ -187,6 +195,12 @@
         scoreRow.appendChild(scoreInput);
         guiContainer.appendChild(scoreRow);
 
+        const currentScoreDiv = document.createElement('div');
+        currentScoreDiv.id = 'current-score-display';
+        currentScoreDiv.innerText = 'Detected Score: 0';
+        currentScoreDiv.style.cssText = 'text-align: center; font-size: 11px; color: #aaa; margin-top: 5px;';
+        guiContainer.appendChild(currentScoreDiv);
+
         const statusDiv = document.createElement('div');
         statusDiv.id = 'bot-status';
         statusDiv.innerText = 'Status: Waiting...';
@@ -232,7 +246,7 @@
         }
     });
 
-    function updateDebug(scene, player, targetY, obstacles, gapTop, gapBottom, nextCenter) {
+    function updateDebug(scene, player, targetY, obstacles, gapTop, gapBottom, nextCenter, wallThreat) {
         if (!CONFIG.debug || !scene) return;
 
         if (!debugGraphics) {
@@ -264,6 +278,11 @@
             debugGraphics.moveTo(player.x + 100, nextCenter);
             debugGraphics.lineTo(player.x + 400, nextCenter);
             debugGraphics.strokePath();
+        }
+
+        if (wallThreat) {
+            debugGraphics.fillStyle(0xff00ff, 0.8);
+            debugGraphics.fillRect(wallThreat.x - 20, wallThreat.y - 20, 40, 40);
         }
 
         debugGraphics.lineStyle(2, 0x00ff00, 1);
@@ -347,17 +366,22 @@
         
         const nextNextX = relevant.find(o => o.x > nextX + 150)?.x;
         let nextGapCenter = undefined;
+        let wallThreat = null;
         
         if (nextNextX) {
             const nextColumn = relevant.filter(o => Math.abs(o.x - nextNextX) < 40);
             
             let nextColLeft = 999999;
+            let nextColY = 0;
             nextColumn.forEach(o => {
                 const x = o.getBounds ? o.getBounds().left : o.x;
-                if(x < nextColLeft) nextColLeft = x;
+                if(x < nextColLeft) {
+                    nextColLeft = x;
+                    nextColY = o.y;
+                }
             });
 
-            if (nextColLeft < viewRight + 100) {
+            if (nextColLeft < viewRight + 150) {
                 const nextBounds = nextColumn.map(o => {
                      const h = o.displayHeight;
                      const y = o.y;
@@ -367,20 +391,23 @@
                 nextBounds.sort((a, b) => a.top - b.top);
                 
                 let nextMaxGap = 0;
-                let nextGapCenter = sceneHeight / 2;
+                let nextGapCenterLocal = sceneHeight / 2;
+                let nextGapFloor = sceneHeight;
+                let nextGapCeiling = 0;
                 
                 for (let i = 0; i < nextBounds.length - 1; i++) {
                     const gap = nextBounds[i+1].top - nextBounds[i].bottom;
                     if (gap > nextMaxGap) {
                         nextMaxGap = gap;
-                        nextGapCenter = nextBounds[i].bottom + (gap / 2);
+                        nextGapCenterLocal = nextBounds[i].bottom + (gap / 2);
+                        nextGapCeiling = nextBounds[i].bottom;
+                        nextGapFloor = nextBounds[i+1].top;
                     }
                 }
+                nextGapCenter = nextGapCenterLocal;
                 
                 const diff = nextGapCenter - gapInfo.center;
-                
                 let biasFactor = 0;
-                
                 const urgency = Math.min(1, currentScore / 150);
 
                 if (diff > 0) { 
@@ -388,7 +415,6 @@
                 } else { 
                     biasFactor = 0.4 + (0.2 * urgency);
                 }
-                
                 if (biasFactor > 1.0) biasFactor = 1.0;
 
                 gapInfo.center += diff * biasFactor;
@@ -405,6 +431,18 @@
                      if (gapInfo.center < safeCeiling) gapInfo.center = safeCeiling;
                      if (gapInfo.center > safeFloor) gapInfo.center = safeFloor;
                 }
+
+
+                const distToWall = nextColLeft - (player.x + pWidth/2);
+                
+                const warningDistance = 150 + (currentScore * 0.5); 
+                
+                if (distToWall < warningDistance && distToWall > 0) {
+
+                    if (player.y > nextGapFloor) {
+                        wallThreat = { x: nextColLeft, y: nextGapFloor };
+                    }
+                }
             }
         }
 
@@ -412,7 +450,8 @@
             ...gapInfo, 
             relevant: column, 
             id: gapId,
-            nextCenter: nextGapCenter
+            nextCenter: nextGapCenter,
+            wallThreat: wallThreat
         };
     }
 
@@ -440,6 +479,36 @@
         }
     }
 
+    function scanForScore(scene) {
+        if (!scene || !scene.children || !scene.children.list) return null;
+        
+        // Prefer objects named 'scoreTxt' or similar
+        if (scene.scoreTxt) return scene.scoreTxt;
+        if (scene.header && scene.header.scoreText) return scene.header.scoreText;
+
+        // Fallback: look for text objects near top center
+        const width = scene.scale.width;
+        
+        let candidates = scene.children.list.filter(c => 
+            c.type === "Text" && 
+            c.active && 
+            c.visible && 
+            c.y < 200 && 
+            !isNaN(parseInt(c.text))
+        );
+        
+        // Sort by Y (topmost) then by size (largest)
+        candidates.sort((a,b) => {
+            if (Math.abs(a.y - b.y) > 10) return a.y - b.y;
+            // approximate size check if style exists
+            let sa = parseInt(a.style?.fontSize) || 0;
+            let sb = parseInt(b.style?.fontSize) || 0;
+            return sb - sa; 
+        });
+
+        return candidates.length > 0 ? candidates[0] : null;
+    }
+
     function update() {
         updateStatus();
         
@@ -455,15 +524,32 @@
         const player = hookedPlayer;
         const scene = hookedScene;
 
-        let currentScore = 0;
-        if (scene.header && scene.header.scoreText) {
-            currentScore = parseInt(scene.header.scoreText.text) || 0;
+        const time = Date.now();
+
+        // --- SCORE UPDATER ---
+        if (time - lastScoreScan > 1000 || !cachedScoreObject || !cachedScoreObject.active) {
+            cachedScoreObject = scanForScore(scene);
+            lastScoreScan = time;
         }
 
+        let currentScore = 0;
+        if (cachedScoreObject && cachedScoreObject.text) {
+            currentScore = parseInt(cachedScoreObject.text) || 0;
+        } else if (typeof scene.scoreTotal !== 'undefined') {
+            currentScore = scene.scoreTotal;
+        }
+
+        const scoreDisplay = document.getElementById('current-score-display');
+        if (scoreDisplay) scoreDisplay.innerText = 'Detected Score: ' + currentScore;
+
         if (CONFIG.targetScore > 0 && currentScore >= CONFIG.targetScore) {
+            // STOP EVERYTHING
             CONFIG.enabled = false;
             const checkbox = document.querySelector('#tapcap-bot-gui input[type="checkbox"]');
             if (checkbox) checkbox.checked = false;
+            
+            updateStatus('Target Score Reached!', '#00ffff');
+            if(debugGraphics) debugGraphics.clear();
             return;
         }
 
@@ -491,8 +577,6 @@
         if (scene.sys.settings.key !== "Game") {
             return;
         }
-
-        const time = Date.now();
 
         if (player.isMoving === false) {
              if (CONFIG.enabled) {
@@ -535,6 +619,7 @@
         let gapBottom = sceneHeight;
         let relevant = [];
         let nextCenter = undefined;
+        let wallThreat = null;
 
         if (gap) {
             if (gap.id !== currentTargetId) {
@@ -551,6 +636,7 @@
             gapBottom = gap.bottom;
             relevant = gap.relevant;
             nextCenter = gap.nextCenter;
+            wallThreat = gap.wallThreat;
         } else {
             currentTargetId = null;
             if (cruisingY < 0) cruisingY = sceneHeight / 2;
@@ -566,7 +652,7 @@
             if(box) box.checked = false;
         }
 
-        updateDebug(scene, player, perfectTargetY + CONFIG.targetOffset, relevant, gapTop, gapBottom, nextCenter);
+        updateDebug(scene, player, perfectTargetY + CONFIG.targetOffset, relevant, gapTop, gapBottom, nextCenter, wallThreat);
 
         const sway = Math.sin(time / 400) * (20 * currentHumanity);
         const noise = (Math.random() - 0.5) * (30 * currentHumanity);
@@ -591,9 +677,15 @@
                 shouldJump = true;
             }
 
+            if (wallThreat) {
+                if (velocityY > -10) {
+                    shouldJump = true;
+                }
+            }
+
             if (shouldJump) {
                 const unsafeCeiling = distToTop < 60;
-                if (unsafeCeiling && velocityY < -2) {
+                if (unsafeCeiling && velocityY < -2 && !wallThreat) {
                     shouldJump = false;
                 }
             }

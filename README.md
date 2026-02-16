@@ -2,6 +2,8 @@
 
 A quick and easy TapCap game bot, sorry Clix
 
+Hopefully this acts as a guidline for how you can eventually combat this
+
 ## Features
 
 * Uses `Function.prototype.bind` hooking to intercept the game's internal Player and Scene objects without exposing global variables.

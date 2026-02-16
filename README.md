@@ -4,6 +4,9 @@ A quick and easy TapCap game bot, sorry Clix
 
 Hopefully this acts as a guidline for how you can eventually combat this
 
+<img width="309" height="341" alt="image" src="https://github.com/user-attachments/assets/ea5bc4aa-88f1-4561-84d8-8b3ffdfb8e4e" />
+
+
 ## Features
 
 * Uses `Function.prototype.bind` hooking to intercept the game's internal Player and Scene objects without exposing global variables.
